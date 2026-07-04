@@ -230,11 +230,22 @@ setInterval(() => {
     }
 }, 1000);
 
-playBtn.addEventListener('click', () => {
+
+playBtn.addEventListener('click', async () => {
+    // CORRECCIÓN PARA iOS: El contexto de audio debe arrancar SÍ O SÍ con el primer tap
     if (!audioCtx) {
+        // 1. Inicializar el contexto inmediatamente
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // 2. Si el contexto arranca suspendido (típico de iOS), lo despertamos
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        
+        // 3. Ahora cargamos y conectamos el flujo
         inicializarAudio();
     } else if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
+        await audioCtx.resume();
         audioHTML.play();
         playBtn.innerText = "PAUSAR AUDIO";
     } else {
