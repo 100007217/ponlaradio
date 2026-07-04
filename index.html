@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radio Delay Pro - COPE iOS Fijo</title>
+    <title>gerard.gomez Radio Delay Pro - COPE</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -90,7 +91,7 @@
             border-left: 4px solid #00ff88;
         }
         .events-list {
-            max-height: 220px;
+            max-height: 250px;
             overflow-y: auto;
             text-align: left;
             padding: 0;
@@ -108,7 +109,7 @@
             justify-content: space-between;
             align-items: center;
         }
-        .keyword-match { color: #ffaa00; font-weight: bold; font-size: 1.05rem; }
+        .keyword-match { font-weight: bold; font-size: 1.05rem; }
         .event-time { color: #888; font-family: monospace; font-size: 0.85rem; }
         .time-elapsed {
             background: #d9534f;
@@ -119,6 +120,7 @@
             font-weight: bold;
             margin-left: 6px;
         }
+
         .btn-toggle {
             width: 100%;
             background-color: #2b5c8f;
@@ -127,6 +129,12 @@
         }
         .btn-toggle.active { background-color: #28a745; }
         .hidden { display: none !important; }
+
+        /* Colores dinámicos para eventos del historial */
+        .color-gol { color: #00ff88; border-left-color: #00ff88 !important; }
+        .color-tarjeta-amarilla { color: #ffcc00; border-left-color: #ffcc00 !important; }
+        .color-tarjeta-roja { color: #ff3333; border-left-color: #ff3333 !important; }
+        .color-defecto { color: #ffaa00; border-left-color: #ffaa00 !important; }
     </style>
 </head>
 <body>
@@ -134,7 +142,7 @@
 <div class="container">
     <div id="liveClock" class="live-clock">00:00:00</div>
 
-    <h1>⏱️ Sincro Radio Pro (A Fransi)</h1>
+    <h1>Sincro Radio COPE gerard.gomez</h1>
     <button id="playBtn" class="btn btn-main">CONECTAR Y REPRODUCIR</button>
     
     <div class="delay-display"><span id="delaySeconds">0.0</span> <span>seg</span></div>
@@ -159,7 +167,7 @@
 <div id="transcriptModule" class="transcript-container hidden">
     <h2>📋 Historial (Palabras clave capturadas)</h2>
     <ul id="eventsList" class="events-list">
-        <li id="noEvents" style="color:#666; font-size:0.85rem; margin-bottom: 15px;">Esperando eventos clave del partido...</li>
+        <li id="noEvents" style="color:#666; font-size:0.85rem; margin-bottom: 15px;">Esperando jugadas clave...</li>
     </ul>
 
     <hr style="border: 0; border-top: 1px solid #333; margin: 15px 0;">
@@ -169,12 +177,10 @@
 </div>
 
 <script>
-let audioCtx, delayNode, audioHTML;
+let audioCtx, delayNode, audioHTML, hls;
 let retrasoActual = 0;
 const maxDelayTime = 60;
-
-// CAMBIO CLAVE PARA IPHONE: Usamos la URL de stream MP3 directo (No HLS), saltando el bloqueo de iOS
-const urlStream = "https://flumotion-cope-net1.vrtserver.club/cope/net1.mp3"; 
+const urlStream = "https://net1-cope.flumotion.com/playlist.m3u8?rp_source=1"; 
 
 const playBtn = document.getElementById('playBtn');
 const delayDisplay = document.getElementById('delaySeconds');
@@ -185,23 +191,24 @@ const liveClock = document.getElementById('liveClock');
 const toggleTranscriptBtn = document.getElementById('toggleTranscriptBtn');
 const transcriptModule = document.getElementById('transcriptModule');
 
-// DICCIONARIO EXPANDIDO CON EMOJIS PERSONALIZADOS
-const mapaPalabras = {
-    "córner": "📐 CÓRNER", "corner": "📐 CÓRNER",
-    "falta": "🧎 FALTA",
-    "gol": "⚽ ¡¡GOL!!",
-    "disparo": "🚀 DISPARO", "chut": "🚀 CHUT", "remate": "🚀 REMATE", "tiró": "🚀 DISPARO",
-    "amarilla": "🟨 TARJETA AMARILLA",
-    "roja": "🟥 TARJETA ROJA", "expulsado": "🟥 TARJETA ROJA",
-    "penalti": "🎯 PENALTI", "penalty": "🎯 PENALTI",
-    "minuto": "⏱️ MINUTO"
-};
-
 let listaEventosGuardados = []; 
 let transcriptorActivo = false;
 let recognition = null;
 
-// RELOJ Y ACTUALIZADOR DE MARCAS DE TIEMPO
+// MAPEO DE PALABRAS CLAVE (FÚTBOL PRO)
+// Detecta variaciones y las unifica en una sola palabra clave bonita con su emoji
+const mapaDiccionario = [
+    { textoMostrar: "⚽ GOL", icono: "⚽", clase: "color-gol", disparadores: ["gol", "goool", "tanto de"] },
+    { textoMostrar: "⛳ CÓRNER", icono: "⛳", clase: "color-defecto", disparadores: ["córner", "corner", "saque de esquina"] },
+    { textoMostrar: "⚠️ FALTA", icono: "⚠️", clase: "color-defecto", disparadores: ["falta", "infracción", "libre directo"] },
+    { textoMostrar: "🥅 DISPARO", icono: "🥅", clase: "color-defecto", disparadores: ["chut", "chuta", "disparo", "remate", "pega", "tiró", "tiro"] },
+    { textoMostrar: "🛑 PENALTI", icono: "🛑", clase: "color-tarjeta-roja", disparadores: ["penalti", "penalty", "pena máxima"] },
+    { textoMostrar: "🟨 AMARILLA", icono: "🟨", clase: "color-tarjeta-amariilla", disparadores: ["tarjeta amarilla", "amarilla", "amonestado"] },
+    { textoMostrar: "🟥 ROJA", icono: "🟥", clase: "color-tarjeta-roja", disparadores: ["tarjeta roja", "roja", "expulsado", "expulsión"] },
+    { textoMostrar: "⏱️ MINUTO", icono: "⏱️", clase: "color-defecto", disparadores: ["minuto"] },
+    { textoMostrar: "🏳️ OFF-SIDE", icono: "🏳️", clase: "color-defecto", disparadores: ["fuera de juego", "offside"] }
+];
+
 setInterval(() => {
     const ahora = new Date();
     liveClock.innerText = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -216,17 +223,12 @@ setInterval(() => {
     }
 }, 1000);
 
-// GESTIÓN DE REPRODUCCIÓN COMPATIBLE CON IPHONE
 playBtn.addEventListener('click', async () => {
     if (!audioCtx) {
-        statusDisplay.innerText = "Iniciando audio en iOS...";
-        
+        statusDisplay.innerText = "Conectando stream...";
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
-        }
-        
-        inicializarAudioDirecto();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        inicializarAudioYConectores();
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
         audioHTML.play();
@@ -238,30 +240,34 @@ playBtn.addEventListener('click', async () => {
     }
 });
 
-function inicializarAudioDirecto() {
+function inicializarAudioYConectores() {
     delayNode = audioCtx.createDelay(maxDelayTime);
     delayNode.delayTime.setValueAtTime(retrasoActual, audioCtx.currentTime);
     
     audioHTML = new Audio();
     audioHTML.crossOrigin = "anonymous";
     audioHTML.playsInline = true;
-    audioHTML.src = urlStream;
 
-    // Conexión directa del flujo de datos
+    if (Hls.isSupported()) {
+        hls = new Hls({ maxBufferLength: 30, enableWorker: true });
+        hls.loadSource(urlStream);
+        hls.attachMedia(audioHTML);
+        hls.on(Hls.Events.MANIFEST_PARSED, function() { conectarNodosAAltavoces(); });
+    } else if (audioHTML.canPlayType('application/vnd.apple.mpegurl')) {
+        audioHTML.src = urlStream;
+        conectarNodosAAltavoces();
+    }
+}
+
+function conectarNodosAAltavoces() {
     const source = audioCtx.createMediaElementSource(audioHTML);
     source.connect(delayNode);
     delayNode.connect(audioCtx.destination);
-    
-    audioHTML.play().then(() => {
-        playBtn.innerText = "PAUSAR AUDIO";
-        statusDisplay.innerText = "Radio sincronizada. ¡Prueba los botones!";
-    }).catch(e => {
-        statusDisplay.innerText = "Error. Toca 'Reproducir' de nuevo.";
-        console.error(e);
-    });
+    audioHTML.play();
+    playBtn.innerText = "PAUSAR AUDIO";
+    statusDisplay.innerText = "Radio sincronizada.";
 }
 
-// TOGGLE TRANSCRIPCIÓN
 toggleTranscriptBtn.addEventListener('click', () => {
     transcriptorActivo = !transcriptorActivo;
     if (transcriptorActivo) {
@@ -281,7 +287,7 @@ toggleTranscriptBtn.addEventListener('click', () => {
 function inicializarTranscriptor() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        liveTextDisplay.innerText = "Dictado no soportado en este iPhone.";
+        liveTextDisplay.innerText = "Dictado no soportado en este navegador.";
         return;
     }
     recognition = new SpeechRecognition();
@@ -296,7 +302,7 @@ function inicializarTranscriptor() {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 textoFinal += event.results[i][0].transcript;
-                procesarTextoFinal(event.results[i][0].transcript.toLowerCase());
+                procesarTextoInteligente(event.results[i][0].transcript.toLowerCase());
             } else {
                 textoProvisional += event.results[i][0].transcript;
             }
@@ -307,37 +313,41 @@ function inicializarTranscriptor() {
     recognition.start();
 }
 
-function procesarTextoFinal(texto) {
-    // Escanear el texto buscando las nuevas claves del partido
-    Object.keys(mapaPalabras).forEach(clave => {
-        if (texto.includes(clave)) {
-            agregarEventoAHistorial(mapaPalabras[clave]);
+// NUEVA FUNCIÓN: Analiza si lo dicho encaja con alguna categoría de fútbol
+function procesarTextoInteligente(texto) {
+    mapaDiccionario.forEach(categoria => {
+        // Comprobar si alguno de los disparadores (sinónimos) está en la frase
+        const acierto = categoria.disparadores.some(disparador => texto.includes(disparador));
+        if (acierto) {
+            agregarEventoAHistorial(categoria);
         }
     });
 }
 
-function agregarEventoAHistorial(textoLimpio) {
+function agregarEventoAHistorial(categoria) {
     const noEventsMsg = document.getElementById('noEvents');
     if (noEventsMsg) noEventsMsg.remove();
 
-    // Evitar duplicar el mismo evento si se procesa la misma frase corta dos veces
+    const ahora = new Date();
+    
+    // Evitar duplicados seguidos de la misma categoría en menos de 5 segundos (por si el transcriptor repite palabras)
     if (listaEventosGuardados.length > 0) {
-        const ultimoEvento = listaEventosGuardados[listaEventosGuardados.length - 1];
-        if (ultimoEvento.texto === textoLimpio && (new Date() - ultimoEvento.timestamp) < 4000) {
-            return; // Bloquea duplicados en ráfagas de 4 segundos
+        const ultimo = listaEventosGuardados[0];
+        if (ultimo.texto === categoria.textoMostrar && (ahora - ultimo.timestamp) < 5000) {
+            return; 
         }
     }
 
-    const ahora = new Date();
     const horaDisparo = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const idUnico = Date.now();
 
-    listaEventosGuardados.push({ id: idUnico, timestamp: ahora, texto: textoLimpio });
+    listaEventosGuardados.unshift({ id: idUnico, timestamp: ahora, texto: categoria.textoMostrar });
 
     const li = document.createElement('li');
-    li.className = 'event-item';
+    // Le asignamos su estilo visual personalizado (verde para gol, amarillo para tarjeta, etc.)
+    li.className = `event-item ${categoria.clase || 'color-defecto'}`;
     li.innerHTML = `
-        <span class="keyword-match">${textoLimpio}</span>
+        <span class="keyword-match">${categoria.textoMostrar}</span>
         <div>
             <span class="event-time">[${horaDisparo}]</span>
             <span class="time-elapsed" id="badge-${idUnico}">hace 0s</span>
