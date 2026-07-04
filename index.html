@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radio Delay - HLS COPE</title>
+    <title>Radio Delay Pro - COPE + Reloj</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         body {
@@ -13,56 +13,129 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            height: 100vh;
+            justify-content: flex-start;
+            min-height: 100vh;
             margin: 0;
+            padding: 15px;
+            box-sizing: border-box;
         }
         .container {
             text-align: center;
             background: #1e1e1e;
-            padding: 30px;
+            padding: 20px;
             border-radius: 20px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-            width: 85%;
-            max-width: 400px;
+            width: 100%;
+            max-width: 420px;
+            margin-bottom: 15px;
         }
-        h1 { font-size: 1.5rem; color: #00ff88; margin-bottom: 20px; }
-        .delay-display {
-            font-size: 3.5rem;
+        /* ESTILO DEL RELOJ EN TIEMPO REAL */
+        .live-clock {
+            font-size: 1.8rem;
             font-weight: bold;
-            margin: 20px 0;
-            color: #ffffff;
+            color: #00bfff;
+            background: #252525;
+            padding: 8px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-family: monospace;
+            border: 1px solid #333;
         }
-        .delay-display span { font-size: 1.5rem; color: #aaa; }
+        h1 { font-size: 1.2rem; color: #00ff88; margin: 0 0 10px 0; }
+        .delay-display {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .delay-display span { font-size: 1.1rem; color: #aaa; }
         .btn {
             background-color: #333;
             color: white;
             border: none;
-            padding: 15px 25px;
-            font-size: 1.2rem;
+            padding: 12px 20px;
+            font-size: 1.1rem;
             font-weight: bold;
             border-radius: 12px;
-            margin: 8px;
+            margin: 4px;
             cursor: pointer;
             touch-action: manipulation;
         }
         .btn:active { background-color: #444; transform: scale(0.98); }
-        .btn-main { background-color: #00ff88; color: #121212; width: 80%; font-size: 1.4rem; }
-        .btn-main:active { background-color: #00cc6e; }
+        .btn-main { background-color: #00ff88; color: #121212; width: 100%; font-size: 1.2rem; margin-bottom: 10px; }
         .grid-buttons {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 20px;
+            gap: 6px;
         }
-        .status { color: #888; font-size: 0.9rem; margin-top: 15px; }
+        .status { color: #888; font-size: 0.8rem; margin-top: 8px; }
+        
+        .transcript-container {
+            width: 100%;
+            max-width: 420px;
+            background: #1e1e1e;
+            border-radius: 20px;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        h2 { font-size: 1rem; color: #00bfff; margin: 0 0 8px 0; text-align: left; }
+        .live-text {
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 10px;
+            font-style: italic;
+            color: #ccc;
+            min-height: 35px;
+            font-size: 0.9rem;
+            text-align: left;
+            margin-bottom: 15px;
+            border-left: 4px solid #00ff88;
+        }
+        .events-list {
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+            padding: 0;
+            margin: 0;
+            list-style: none;
+        }
+        /* ITEMS DEL HISTORIAL MEJORADOS */
+        .event-item {
+            background: #252525;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            border-left: 4px solid #ffaa00;
+        }
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .keyword-match { color: #ffaa00; font-weight: bold; }
+        .event-time { color: #888; font-family: monospace; }
+        /* CONTADOR DE TIEMPO TRANSCURRIDO */
+        .time-elapsed {
+            background: #d9534f;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .event-phrase {
+            color: #bbb;
+            display: block;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>⏱️ Sincro Radio HLS</h1>
-    
+    <div id="liveClock" class="live-clock">00:00:00</div>
+
+    <h1>⏱️ Sincro Radio Pro</h1>
     <button id="playBtn" class="btn btn-main">CONECTAR Y REPRODUCIR</button>
     
     <div class="delay-display"><span id="delaySeconds">0.0</span> <span>seg</span></div>
@@ -76,45 +149,78 @@
         <button class="btn" onclick="ajustarRetraso(-0.5)">-0.5s</button>
     </div>
     
-    <button class="btn" style="width:100%; background:#d9534f;" onclick="resetear()">Reset (0s)</button>
-
+    <button class="btn" style="width:100%; background:#d9534f; margin-top: 8px;" onclick="resetear()">Reset (0s)</button>
     <div id="status" class="status">Radio detenida</div>
 </div>
 
+<div class="transcript-container">
+    <h2>🎙️ Detector de Jugadas (En directo)</h2>
+    <div id="liveText" class="live-text">El texto de la radio aparecerá aquí...</div>
+    
+    <h2>📋 Historial (Diferencia con hora actual)</h2>
+    <ul id="eventsList" class="events-list">
+        <li id="noEvents" style="color:#666; font-size:0.85rem;">Esperando jugadas clave (córner, minuto, gol, falta)...</li>
+    </ul>
+</div>
+
 <script>
-let audioCtx;
-let delayNode;
-let audioHTML;
-let hls;
+let audioCtx, delayNode, audioHTML, hls;
 let retrasoActual = 0;
 const maxDelayTime = 60;
-
-// ⚠️ PON AQUÍ TU ENLACE .m3u8 COMPLETO
-const urlStream = "https://net1-cope.flumotion.com/playlist.m3u8?rp_source=1";
+const urlStream = "https://net1-cope.flumotion.com/playlist.m3u8?rp_source=1"; 
 
 const playBtn = document.getElementById('playBtn');
 const delayDisplay = document.getElementById('delaySeconds');
 const statusDisplay = document.getElementById('status');
+const liveTextDisplay = document.getElementById('liveText');
+const eventsList = document.getElementById('eventsList');
+const liveClock = document.getElementById('liveClock');
+
+const palabrasClave = ["córner", "corner", "minuto", "gol", "falta", "penalti", "tarjeta", "fuera de juego"];
+let listaEventosGuardados = []; // Aquí guardaremos los eventos con su timestamp
+
+// 1. FUNCIÓN RELOJ EN TIEMPO REAL Y ACTUALIZADOR DE DIFERENCIAS
+setInterval(() => {
+    const ahora = new Date();
+    // Actualizar Reloj Superior
+    liveClock.innerText = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    
+    // Actualizar las diferencias de tiempo en el historial
+    listaEventosGuardados.forEach(evento => {
+        const diffMs = ahora - evento.timestamp; // Diferencia en milisegundos
+        const diffSegundos = Math.floor(diffMs / 1000);
+        
+        let textoDiferencia = "";
+        if (diffSegundos < 60) {
+            textoDiferencia = `hace ${diffSegundos}s`;
+        } else {
+            const min = Math.floor(diffSegundos / 60);
+            const seg = diffSegundos % 60;
+            textoDiferencia = `hace ${min}m ${seg}s`;
+        }
+        
+        // Renderizar el badge de tiempo en el DOM
+        document.getElementById(`badge-${evento.id}`).innerText = textoDiferencia;
+    });
+}, 1000);
 
 playBtn.addEventListener('click', () => {
     if (!audioCtx) {
         inicializarAudio();
+        inicializarTranscriptor();
     } else if (audioCtx.state === 'suspended') {
         audioCtx.resume();
         audioHTML.play();
         playBtn.innerText = "PAUSAR AUDIO";
-        statusDisplay.innerText = "Escuchando...";
     } else {
         audioCtx.suspend();
         audioHTML.pause();
         playBtn.innerText = "REANUDAR AUDIO";
-        statusDisplay.innerText = "Audio en pausa";
     }
 });
 
 function inicializarAudio() {
-    statusDisplay.innerText = "Procesando streaming m3u8...";
-    
+    statusDisplay.innerText = "Conectando stream...";
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     delayNode = audioCtx.createDelay(maxDelayTime);
     delayNode.delayTime.value = retrasoActual;
@@ -122,21 +228,16 @@ function inicializarAudio() {
     audioHTML = new Audio();
     audioHTML.crossOrigin = "anonymous";
 
-    // Si el navegador soporta HLS nativamente (como Safari en iPhone)
     if (audioHTML.canPlayType('application/vnd.apple.mpegurl')) {
         audioHTML.src = urlStream;
         conectarAudioContext();
-    } 
-    // Para la mayoría de navegadores (Chrome, Android, Firefox) usamos hls.js
-    else if (Hls.isSupported()) {
+    } else if (Hls.isSupported()) {
         hls = new Hls();
         hls.loadSource(urlStream);
         hls.attachMedia(audioHTML);
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
             conectarAudioContext();
         });
-    } else {
-        statusDisplay.innerText = "Tu navegador no soporta streaming HLS.";
     }
 }
 
@@ -144,23 +245,88 @@ function conectarAudioContext() {
     const source = audioCtx.createMediaElementSource(audioHTML);
     source.connect(delayNode);
     delayNode.connect(audioCtx.destination);
-    
-    audioHTML.play().then(() => {
-        playBtn.innerText = "PAUSAR AUDIO";
-        statusDisplay.innerText = "Sincronizando directo...";
-    }).catch(err => {
-        statusDisplay.innerText = "Error. Dale al play otra vez.";
-        console.error(err);
+    audioHTML.play();
+    playBtn.innerText = "PAUSAR AUDIO";
+    statusDisplay.innerText = "Radio sincronizada.";
+}
+
+function inicializarTranscriptor() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        liveTextDisplay.innerText = "Tu navegador móvil no soporta transcripción nativa.";
+        return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+        let textoProvisional = '';
+        let textoFinal = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                textoFinal += event.results[i][0].transcript;
+                procesarTextoFinal(event.results[i][0].transcript.toLowerCase());
+            } else {
+                textoProvisional += event.results[i][0].transcript;
+            }
+        }
+        liveTextDisplay.innerText = textoFinal || textoProvisional;
+    };
+
+    recognition.onend = () => { recognition.start(); };
+    recognition.start();
+}
+
+function procesarTextoFinal(texto) {
+    palabrasClave.forEach(palabra => {
+        if (texto.includes(palabra)) {
+            agregarEventoAHistorial(palabra, texto);
+        }
     });
+}
+
+function agregarEventoAHistorial(palabra, fraseCompleta) {
+    const noEventsMsg = document.getElementById('noEvents');
+    if (noEventsMsg) noEventsMsg.remove();
+
+    const ahora = new Date();
+    const horaDisparo = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const idUnico = Date.now(); // Nos sirve para identificar el badge en el DOM
+
+    // Guardar en nuestro array lógico para el actualizador dinámico
+    listaEventosGuardados.push({
+        id: idUnico,
+        timestamp: ahora,
+        palabra: palabra
+    });
+
+    const fraseCorta = fraseCompleta.length > 55 ? fraseCompleta.substring(0, 55) + "..." : fraseCompleta;
+
+    const li = document.createElement('li');
+    li.className = 'event-item';
+    li.innerHTML = `
+        <div class="event-header">
+            <span>⚽ <span class="keyword-match">${palabra.toUpperCase()}</span></span>
+            <div>
+                <span class="event-time" style="margin-right:6px;">[${horaDisparo}]</span>
+                <span class="time-elapsed" id="badge-${idUnico}">hace 0s</span>
+            </div>
+        </div>
+        <span class="event-phrase">"${fraseCorta}"</span>
+    `;
+
+    eventsList.insertBefore(li, eventsList.firstChild);
 }
 
 function ajustarRetraso(segundos) {
     if (!delayNode) return;
     retrasoActual += segundos;
-    
     if (retrasoActual < 0) retrasoActual = 0;
     if (retrasoActual > maxDelayTime) retrasoActual = maxDelayTime;
-    
     delayNode.delayTime.setValueAtTime(retrasoActual, audioCtx.currentTime);
     delayDisplay.innerText = retrasoActual.toFixed(1);
 }
