@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retrasador de radio - COPE</title>
+    <title>Radio Delay Pro - COPE</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         body {
@@ -68,7 +68,6 @@
         }
         .status { color: #888; font-size: 0.8rem; margin-top: 8px; }
         
-        /* ESTILOS DEL MODULO DE TRANSCRIPCIÓN */
         .transcript-container {
             width: 100%;
             max-width: 420px;
@@ -101,48 +100,35 @@
         }
         .event-item {
             background: #252525;
-            padding: 10px;
+            padding: 12px;
             border-radius: 8px;
             margin-bottom: 8px;
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             border-left: 4px solid #ffaa00;
-        }
-        .event-header {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 4px;
+            align-items: center;
         }
-        .keyword-match { color: #ffaa00; font-weight: bold; }
-        .event-time { color: #888; font-family: monospace; }
+        .keyword-match { color: #ffaa00; font-weight: bold; font-size: 1.05rem; }
+        .event-time { color: #888; font-family: monospace; font-size: 0.85rem; }
         .time-elapsed {
             background: #d9534f;
             color: white;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.8rem;
             font-weight: bold;
-        }
-        .event-phrase {
-            color: #bbb;
-            display: block;
-            margin-top: 2px;
+            margin-left: 6px;
         }
 
-        /* BOTÓN TOGGLE TRANSCRIPCIÓN */
         .btn-toggle {
             width: 100%;
             background-color: #2b5c8f;
             color: white;
             margin-bottom: 10px;
         }
-        .btn-toggle.active {
-            background-color: #28a745;
-        }
-        
-        /* CLASE PARA OCULTAR BLOQUES DE FORMA LIMPIA */
-        .hidden {
-            display: none !important;
-        }
+        .btn-toggle.active { background-color: #28a745; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -173,7 +159,7 @@
 </div>
 
 <div id="transcriptModule" class="transcript-container hidden">
-    <h2>📋 Historial (Diferencia con hora actual)</h2>
+    <h2>📋 Historial (Palabras clave capturadas)</h2>
     <ul id="eventsList" class="events-list">
         <li id="noEvents" style="color:#666; font-size:0.85rem; margin-bottom: 15px;">Esperando jugadas clave (córner, minuto, gol, falta)...</li>
     </ul>
@@ -188,6 +174,7 @@
 let audioCtx, delayNode, audioHTML, hls;
 let retrasoActual = 0;
 const maxDelayTime = 60;
+// URL utilizando protocolo HTTP seguro nativo
 const urlStream = "https://net1-cope.flumotion.com/playlist.m3u8?rp_source=1"; 
 
 const playBtn = document.getElementById('playBtn');
@@ -196,8 +183,6 @@ const statusDisplay = document.getElementById('status');
 const liveTextDisplay = document.getElementById('liveText');
 const eventsList = document.getElementById('eventsList');
 const liveClock = document.getElementById('liveClock');
-
-// Elementos del Toggle
 const toggleTranscriptBtn = document.getElementById('toggleTranscriptBtn');
 const transcriptModule = document.getElementById('transcriptModule');
 
@@ -206,44 +191,33 @@ let listaEventosGuardados = [];
 let transcriptorActivo = false;
 let recognition = null;
 
-// RELOJ Y CONTADOR DINÁMICO
+// RELOJ Y ACTUALIZADOR DE TIEMPO TRANSCURRIDO
 setInterval(() => {
     const ahora = new Date();
     liveClock.innerText = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     
     if (transcriptorActivo) {
         listaEventosGuardados.forEach(evento => {
-            const diffMs = ahora - evento.timestamp;
-            const diffSegundos = Math.floor(diffMs / 1000);
-            
-            let textoDiferencia = "";
-            if (diffSegundos < 60) {
-                textoDiferencia = `hace ${diffSegundos}s`;
-            } else {
-                const min = Math.floor(diffSegundos / 60);
-                const seg = diffSegundos % 60;
-                textoDiferencia = `hace ${min}m ${seg}s`;
-            }
+            const diffSegundos = Math.floor((ahora - evento.timestamp) / 1000);
+            let textoDiferencia = diffSegundos < 60 ? `hace ${diffSegundos}s` : `hace ${Math.floor(diffSegundos / 60)}m ${diffSegundos % 60}s`;
             const badge = document.getElementById(`badge-${evento.id}`);
             if (badge) badge.innerText = textoDiferencia;
         });
     }
 }, 1000);
 
-
+// SOLUCIÓN DEFINITIVA PARA iOS/IPHONE
 playBtn.addEventListener('click', async () => {
-    // CORRECCIÓN PARA iOS: El contexto de audio debe arrancar SÍ O SÍ con el primer tap
     if (!audioCtx) {
-        // 1. Inicializar el contexto inmediatamente
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        statusDisplay.innerText = "Sincronizando audio con el sistema...";
         
-        // 2. Si el contexto arranca suspendido (típico de iOS), lo despertamos
+        // Creamos el contexto inmediatamente al hacer tap
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
         
-        // 3. Ahora cargamos y conectamos el flujo
-        inicializarAudio();
+        inicializarAudioYConectores();
     } else if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
         audioHTML.play();
@@ -255,69 +229,71 @@ playBtn.addEventListener('click', async () => {
     }
 });
 
-// LÓGICA DEL BOTÓN TOGGLE
-toggleTranscriptBtn.addEventListener('click', () => {
-    transcriptorActivo = !transcriptorActivo;
-
-    if (transcriptorActivo) {
-        toggleTranscriptBtn.innerText = "🎙️ TRANSCRIPCIÓN: ENCENDIDA";
-        toggleTranscriptBtn.classList.add('active');
-        transcriptModule.classList.remove('hidden'); // Mostrar los bloques
-        
-        if (!recognition) {
-            inicializarTranscriptor();
-        } else {
-            try { recognition.start(); } catch(e) {}
-        }
-    } else {
-        toggleTranscriptBtn.innerText = "🎙️ TRANSCRIPCIÓN: APAGADA";
-        toggleTranscriptBtn.classList.remove('active');
-        transcriptModule.classList.add('hidden'); // Ocultar los bloques
-        
-        if (recognition) {
-            recognition.abort(); // Detener el uso del micro
-        }
-    }
-});
-
-function inicializarAudio() {
-    statusDisplay.innerText = "Conectando stream...";
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function inicializarAudioYConectores() {
     delayNode = audioCtx.createDelay(maxDelayTime);
-    delayNode.delayTime.value = retrasoActual;
+    delayNode.delayTime.setValueAtTime(retrasoActual, audioCtx.currentTime);
     
     audioHTML = new Audio();
+    // Forzamos atributos que iOS exige para la manipulación en segundo plano
     audioHTML.crossOrigin = "anonymous";
+    audioHTML.playsInline = true;
+    audioHTML.muted = false;
 
-    if (audioHTML.canPlayType('application/vnd.apple.mpegurl')) {
-        audioHTML.src = urlStream;
-        conectarAudioContext();
-    } else if (Hls.isSupported()) {
-        hls = new Hls();
+    // FORZAMOS hls.js EN CUALQUIER NAVEGADOR MÓVIL (Incluso si soporta m3u8 nativo)
+    // Esto desarma la restricción de red de Apple y nos da control sobre el buffer
+    if (Hls.isSupported()) {
+        hls = new Hls({
+            maxBufferLength: 30,
+            enableWorker: true
+        });
         hls.loadSource(urlStream);
         hls.attachMedia(audioHTML);
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
-            conectarAudioContext();
+            conectarNodosAAltavoces();
         });
+    } else if (audioHTML.canPlayType('application/vnd.apple.mpegurl')) {
+        // Fallback secundario para Safari antiguo
+        audioHTML.src = urlStream;
+        conectarNodosAAltavoces();
     }
 }
 
-function conectarAudioContext() {
+function conectarNodosAAltavoces() {
     const source = audioCtx.createMediaElementSource(audioHTML);
     source.connect(delayNode);
     delayNode.connect(audioCtx.destination);
-    audioHTML.play();
-    playBtn.innerText = "PAUSAR AUDIO";
-    statusDisplay.innerText = "Radio sincronizada.";
+    
+    audioHTML.play().then(() => {
+        playBtn.innerText = "PAUSAR AUDIO";
+        statusDisplay.innerText = "Radio sincronizada y lista para retrasar.";
+    }).catch(e => {
+        statusDisplay.innerText = "Error de inicio. Toca 'Reproducir' otra vez.";
+    });
 }
+
+// TOGGLE TRANSCRIPCIÓN
+toggleTranscriptBtn.addEventListener('click', () => {
+    transcriptorActivo = !transcriptorActivo;
+    if (transcriptorActivo) {
+        toggleTranscriptBtn.innerText = "🎙️ TRANSCRIPCIÓN: ENCENDIDA";
+        toggleTranscriptBtn.classList.add('active');
+        transcriptModule.classList.remove('hidden');
+        if (!recognition) inicializarTranscriptor();
+        else try { recognition.start(); } catch(e) {}
+    } else {
+        toggleTranscriptBtn.innerText = "🎙️ TRANSCRIPCIÓN: APAGADA";
+        toggleTranscriptBtn.classList.remove('active');
+        transcriptModule.classList.add('hidden');
+        if (recognition) recognition.abort();
+    }
+});
 
 function inicializarTranscriptor() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        liveTextDisplay.innerText = "Navegador no compatible con dictado.";
+        liveTextDisplay.innerText = "Dictado no soportado en este navegador móvil.";
         return;
     }
-
     recognition = new SpeechRecognition();
     recognition.lang = 'es-ES';
     recognition.continuous = true;
@@ -327,7 +303,6 @@ function inicializarTranscriptor() {
         if (!transcriptorActivo) return;
         let textoProvisional = '';
         let textoFinal = '';
-
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 textoFinal += event.results[i][0].transcript;
@@ -338,26 +313,19 @@ function inicializarTranscriptor() {
         }
         liveTextDisplay.innerText = textoFinal || textoProvisional;
     };
-
-    recognition.onend = () => { 
-        // Solo reinicia automáticamente si el usuario no ha apagado el toggle manualmente
-        if (transcriptorActivo) {
-            try { recognition.start(); } catch(e) {}
-        }
-    };
-    
+    recognition.onend = () => { if (transcriptorActivo) try { recognition.start(); } catch(e) {} };
     recognition.start();
 }
 
 function procesarTextoFinal(texto) {
     palabrasClave.forEach(palabra => {
         if (texto.includes(palabra)) {
-            agregarEventoAHistorial(palabra, texto);
+            agregarEventoAHistorial(palabra);
         }
     });
 }
 
-function agregarEventoAHistorial(palabra, fraseCompleta) {
+function agregarEventoAHistorial(palabra) {
     const noEventsMsg = document.getElementById('noEvents');
     if (noEventsMsg) noEventsMsg.remove();
 
@@ -365,27 +333,18 @@ function agregarEventoAHistorial(palabra, fraseCompleta) {
     const horaDisparo = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const idUnico = Date.now();
 
-    listaEventosGuardados.push({
-        id: idUnico,
-        timestamp: ahora,
-        palabra: palabra
-    });
+    listaEventosGuardados.push({ id: idUnico, timestamp: ahora, palabra: palabra });
 
-    const fraseCorta = fraseCompleta.length > 55 ? fraseCompleta.substring(0, 55) + "..." : fraseCompleta;
-
+    // MEJORA: Diseño limpio. Eliminamos la frase entera y dejamos solo la palabra y los tiempos.
     const li = document.createElement('li');
     li.className = 'event-item';
     li.innerHTML = `
-        <div class="event-header">
-            <span>⚽ <span class="keyword-match">${palabra.toUpperCase()}</span></span>
-            <div>
-                <span class="event-time" style="margin-right:6px;">[${horaDisparo}]</span>
-                <span class="time-elapsed" id="badge-${idUnico}">hace 0s</span>
-            </div>
+        <span>⚽ <span class="keyword-match">${palabra.toUpperCase()}</span></span>
+        <div>
+            <span class="event-time">[${horaDisparo}]</span>
+            <span class="time-elapsed" id="badge-${idUnico}">hace 0s</span>
         </div>
-        <span class="event-phrase">"${fraseCorta}"</span>
     `;
-
     eventsList.insertBefore(li, eventsList.firstChild);
 }
 
