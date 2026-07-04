@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radio Fransua Bellvitge - COPE + Reloj</title>
+    <title>Radio Delay Pro - COPE</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         body {
@@ -29,7 +29,6 @@
             max-width: 420px;
             margin-bottom: 15px;
         }
-        /* ESTILO DEL RELOJ EN TIEMPO REAL */
         .live-clock {
             font-size: 1.8rem;
             font-weight: bold;
@@ -69,6 +68,7 @@
         }
         .status { color: #888; font-size: 0.8rem; margin-top: 8px; }
         
+        /* ESTILOS DEL MODULO DE TRANSCRIPCIÓN */
         .transcript-container {
             width: 100%;
             max-width: 420px;
@@ -76,8 +76,10 @@
             border-radius: 20px;
             padding: 15px;
             box-sizing: border-box;
+            margin-top: 10px;
         }
         h2 { font-size: 1rem; color: #00bfff; margin: 0 0 8px 0; text-align: left; }
+        
         .live-text {
             background: #2a2a2a;
             padding: 10px;
@@ -87,7 +89,6 @@
             min-height: 35px;
             font-size: 0.9rem;
             text-align: left;
-            margin-bottom: 15px;
             border-left: 4px solid #00ff88;
         }
         .events-list {
@@ -98,7 +99,6 @@
             margin: 0;
             list-style: none;
         }
-        /* ITEMS DEL HISTORIAL MEJORADOS */
         .event-item {
             background: #252525;
             padding: 10px;
@@ -114,7 +114,6 @@
         }
         .keyword-match { color: #ffaa00; font-weight: bold; }
         .event-time { color: #888; font-family: monospace; }
-        /* CONTADOR DE TIEMPO TRANSCURRIDO */
         .time-elapsed {
             background: #d9534f;
             color: white;
@@ -127,6 +126,22 @@
             color: #bbb;
             display: block;
             margin-top: 2px;
+        }
+
+        /* BOTÓN TOGGLE TRANSCRIPCIÓN */
+        .btn-toggle {
+            width: 100%;
+            background-color: #2b5c8f;
+            color: white;
+            margin-bottom: 10px;
+        }
+        .btn-toggle.active {
+            background-color: #28a745;
+        }
+        
+        /* CLASE PARA OCULTAR BLOQUES DE FORMA LIMPIA */
+        .hidden {
+            display: none !important;
         }
     </style>
 </head>
@@ -153,14 +168,20 @@
     <div id="status" class="status">Radio detenida</div>
 </div>
 
-<div class="transcript-container">
-    <h2>🎙️ Detector de Jugadas (En directo)</h2>
-    <div id="liveText" class="live-text">El texto de la radio aparecerá aquí...</div>
-    
+<div style="width: 100%; max-width: 420px;">
+    <button id="toggleTranscriptBtn" class="btn btn-toggle">🎙️ TRANSCRIPCIÓN: APAGADA</button>
+</div>
+
+<div id="transcriptModule" class="transcript-container hidden">
     <h2>📋 Historial (Diferencia con hora actual)</h2>
     <ul id="eventsList" class="events-list">
-        <li id="noEvents" style="color:#666; font-size:0.85rem;">Esperando jugadas clave (córner, minuto, gol, falta)...</li>
+        <li id="noEvents" style="color:#666; font-size:0.85rem; margin-bottom: 15px;">Esperando jugadas clave (córner, minuto, gol, falta)...</li>
     </ul>
+
+    <hr style="border: 0; border-top: 1px solid #333; margin: 15px 0;">
+
+    <h2>🎙️ Texto en directo</h2>
+    <div id="liveText" class="live-text">El transcriptor está activo...</div>
 </div>
 
 <script>
@@ -176,38 +197,42 @@ const liveTextDisplay = document.getElementById('liveText');
 const eventsList = document.getElementById('eventsList');
 const liveClock = document.getElementById('liveClock');
 
-const palabrasClave = ["córner", "corner", "minuto", "gol", "falta", "penalti", "tarjeta", "fuera de juego"];
-let listaEventosGuardados = []; // Aquí guardaremos los eventos con su timestamp
+// Elementos del Toggle
+const toggleTranscriptBtn = document.getElementById('toggleTranscriptBtn');
+const transcriptModule = document.getElementById('transcriptModule');
 
-// 1. FUNCIÓN RELOJ EN TIEMPO REAL Y ACTUALIZADOR DE DIFERENCIAS
+const palabrasClave = ["córner", "corner", "minuto", "gol", "falta", "penalti", "tarjeta", "fuera de juego"];
+let listaEventosGuardados = []; 
+let transcriptorActivo = false;
+let recognition = null;
+
+// RELOJ Y CONTADOR DINÁMICO
 setInterval(() => {
     const ahora = new Date();
-    // Actualizar Reloj Superior
     liveClock.innerText = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     
-    // Actualizar las diferencias de tiempo en el historial
-    listaEventosGuardados.forEach(evento => {
-        const diffMs = ahora - evento.timestamp; // Diferencia en milisegundos
-        const diffSegundos = Math.floor(diffMs / 1000);
-        
-        let textoDiferencia = "";
-        if (diffSegundos < 60) {
-            textoDiferencia = `hace ${diffSegundos}s`;
-        } else {
-            const min = Math.floor(diffSegundos / 60);
-            const seg = diffSegundos % 60;
-            textoDiferencia = `hace ${min}m ${seg}s`;
-        }
-        
-        // Renderizar el badge de tiempo en el DOM
-        document.getElementById(`badge-${evento.id}`).innerText = textoDiferencia;
-    });
+    if (transcriptorActivo) {
+        listaEventosGuardados.forEach(evento => {
+            const diffMs = ahora - evento.timestamp;
+            const diffSegundos = Math.floor(diffMs / 1000);
+            
+            let textoDiferencia = "";
+            if (diffSegundos < 60) {
+                textoDiferencia = `hace ${diffSegundos}s`;
+            } else {
+                const min = Math.floor(diffSegundos / 60);
+                const seg = diffSegundos % 60;
+                textoDiferencia = `hace ${min}m ${seg}s`;
+            }
+            const badge = document.getElementById(`badge-${evento.id}`);
+            if (badge) badge.innerText = textoDiferencia;
+        });
+    }
 }, 1000);
 
 playBtn.addEventListener('click', () => {
     if (!audioCtx) {
         inicializarAudio();
-        inicializarTranscriptor();
     } else if (audioCtx.state === 'suspended') {
         audioCtx.resume();
         audioHTML.play();
@@ -216,6 +241,31 @@ playBtn.addEventListener('click', () => {
         audioCtx.suspend();
         audioHTML.pause();
         playBtn.innerText = "REANUDAR AUDIO";
+    }
+});
+
+// LÓGICA DEL BOTÓN TOGGLE
+toggleTranscriptBtn.addEventListener('click', () => {
+    transcriptorActivo = !transcriptorActivo;
+
+    if (transcriptorActivo) {
+        toggleTranscriptBtn.innerText = "🎙️ TRANSCRIPCIÓN: ENCENDIDA";
+        toggleTranscriptBtn.classList.add('active');
+        transcriptModule.classList.remove('hidden'); // Mostrar los bloques
+        
+        if (!recognition) {
+            inicializarTranscriptor();
+        } else {
+            try { recognition.start(); } catch(e) {}
+        }
+    } else {
+        toggleTranscriptBtn.innerText = "🎙️ TRANSCRIPCIÓN: APAGADA";
+        toggleTranscriptBtn.classList.remove('active');
+        transcriptModule.classList.add('hidden'); // Ocultar los bloques
+        
+        if (recognition) {
+            recognition.abort(); // Detener el uso del micro
+        }
     }
 });
 
@@ -253,16 +303,17 @@ function conectarAudioContext() {
 function inicializarTranscriptor() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        liveTextDisplay.innerText = "Tu navegador móvil no soporta transcripción nativa.";
+        liveTextDisplay.innerText = "Navegador no compatible con dictado.";
         return;
     }
 
-    const recognition = new SpeechRecognition();
+    recognition = new SpeechRecognition();
     recognition.lang = 'es-ES';
     recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onresult = (event) => {
+        if (!transcriptorActivo) return;
         let textoProvisional = '';
         let textoFinal = '';
 
@@ -277,7 +328,13 @@ function inicializarTranscriptor() {
         liveTextDisplay.innerText = textoFinal || textoProvisional;
     };
 
-    recognition.onend = () => { recognition.start(); };
+    recognition.onend = () => { 
+        // Solo reinicia automáticamente si el usuario no ha apagado el toggle manualmente
+        if (transcriptorActivo) {
+            try { recognition.start(); } catch(e) {}
+        }
+    };
+    
     recognition.start();
 }
 
@@ -295,9 +352,8 @@ function agregarEventoAHistorial(palabra, fraseCompleta) {
 
     const ahora = new Date();
     const horaDisparo = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const idUnico = Date.now(); // Nos sirve para identificar el badge en el DOM
+    const idUnico = Date.now();
 
-    // Guardar en nuestro array lógico para el actualizador dinámico
     listaEventosGuardados.push({
         id: idUnico,
         timestamp: ahora,
